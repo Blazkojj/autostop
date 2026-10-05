@@ -77,6 +77,17 @@ start.bat --idle 10 --countdown 120
 
 ## Pytania
 
+**`start.bat` pisze „Nie znaleziono Pythona”, a Python jest zainstalowany.**
+`start.bat` szuka Pythona w PATH i w typowych folderach instalacji. Jeśli
+Python jest gdzie indziej, otwórz wiersz poleceń w folderze AutoStop (wpisz
+`cmd` w pasku adresu Eksploratora i naciśnij Enter) i podaj pełną ścieżkę do
+`python.exe`:
+
+```
+"C:\ścieżka\do\python.exe" -m pip install psutil
+"C:\ścieżka\do\python.exe" autostop.py
+```
+
 **Komputer się nie wyłączył, bo jakiś program „blokuje zamykanie”.**
 Windows czeka, aż otwarte programy zapiszą dane. Użyj opcji `--force`, jeśli
 na pewno nie masz niczego niezapisanego.

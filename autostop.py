@@ -339,16 +339,27 @@ def is_launcher_process(name: str | None, exe_getter, extra: set[str]) -> bool:
     return False
 
 
+def launcher_processes(extra: set[str]):
+    """Zwraca pary (proces, nazwa) dla uruchomionych launcherów."""
+    # Bez process_iter(["name"]): wtedy błąd odczytu jednego procesu
+    # przerwałby całe wyliczanie zamiast pominąć tylko ten proces.
+    for proc in psutil.process_iter():
+        try:
+            name = proc.name()
+            if is_launcher_process(name, proc.exe, extra):
+                yield proc, name
+        except (psutil.Error, OSError):
+            continue
+
+
 def launcher_io_sampler(extra: set[str]):
     """Zwraca funkcję, która podaje {pid: bajty odczytane+zapisane} dla
     wszystkich uruchomionych launcherów."""
 
     def sample() -> dict[int, int]:
         totals = {}
-        for proc in psutil.process_iter(["name"]):
+        for proc, _ in launcher_processes(extra):
             try:
-                if not is_launcher_process(proc.info["name"], proc.exe, extra):
-                    continue
                 io = proc.io_counters()
             except (psutil.Error, OSError):
                 continue
@@ -365,13 +376,7 @@ def network_sampler() -> dict[int, int]:
 
 
 def running_launchers(extra: set[str]) -> list[str]:
-    names = set()
-    for proc in psutil.process_iter(["name"]):
-        try:
-            if is_launcher_process(proc.info["name"], proc.exe, extra):
-                names.add(proc.info["name"])
-        except (psutil.Error, OSError):
-            continue
+    names = {name for _, name in launcher_processes(extra)}
     return sorted(names, key=str.lower)
 
 
