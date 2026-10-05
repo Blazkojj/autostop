@@ -4,9 +4,11 @@ Program, który **sam wyłącza komputer, gdy gry skończą się pobierać**.
 Włączasz pobieranie w Steamie (albo w Epic Games, GOG Galaxy, Battle.net,
 EA app, Ubisoft Connect), uruchamiasz AutoStop i idziesz spać. Po pobraniu komputer się wyłączy.
 
+![Okno AutoStop](docs/okno.png)
+
 ## Jak to działa
 
-Co 10 sekund program sprawdza dwie rzeczy:
+Co sekundę (w wersji konsolowej co 10 sekund) program sprawdza dwie rzeczy:
 
 1. **Ruch na dysku launcherów.** Pobierana gra musi zostać zapisana na dysk,
    więc AutoStop mierzy, ile danych na sekundę zapisują procesy launcherów
@@ -30,15 +32,32 @@ Gry **wstrzymane** w Steamie nie blokują wyłączenia.
    Przy instalacji zaznacz **„Add python.exe to PATH”**.
 2. Pobierz ten projekt (zielony przycisk **Code → Download ZIP**) i rozpakuj.
 3. Kliknij dwa razy **`start.bat`**. Za pierwszym razem program sam doinstaluje
-   bibliotekę `psutil`.
+   bibliotekę `psutil`. Otworzy się okno AutoStop.
 
 ## Użycie
 
-Najpierw włącz pobieranie gier, potem uruchom `start.bat`. Kolejność nie jest
-ważna: jeśli uruchomisz AutoStop wcześniej, poczeka, aż pobieranie się zacznie.
+1. Włącz pobieranie gier w launcherze.
+2. Uruchom `start.bat` i kliknij **Start**.
 
-Za pierwszym razem sprawdź, czy wszystko działa, **w trybie testowym**. Robi wszystko
-tak samo, tylko na końcu nie wyłącza komputera:
+Okno odświeża się co sekundę. Pokazuje:
+
+- **status**: czy gry się pobierają, a gdy pobieranie ustanie, ile zostało
+  do wyłączenia,
+- **prędkość pobierania** z wykresem z ostatnich 2 minut (najedź myszką na
+  wykres, żeby zobaczyć dokładną wartość),
+- **kolejkę Steam i Epic** z postępem każdej gry,
+- **ustawienia**: po ilu minutach ciszy wyłączyć komputer, jak długo odliczać
+  i **tryb testowy**, w którym komputer się nie wyłącza.
+
+Przed wyłączeniem okno wyskakuje na wierzch i odlicza. Przycisk
+**Anuluj wyłączanie** przerywa odliczanie.
+
+Za pierwszym razem włącz **tryb testowy** i sprawdź, czy wszystko działa.
+
+### Wersja konsolowa
+
+Gdy do `start.bat` dopiszesz jakąkolwiek opcję, uruchomi się wersja w oknie
+konsoli, np. tryb testowy:
 
 ```
 start.bat --test
@@ -51,9 +70,10 @@ uruchomione launchery, aktualna prędkość):
 start.bat --status
 ```
 
-Z wiersza poleceń można też uruchomić program bezpośrednio: `py autostop.py`.
+Z wiersza poleceń można też uruchomić program bezpośrednio: `py autostop.py`
+(konsola) albo `py autostop_gui.py` (okno).
 
-### Opcje
+### Opcje wersji konsolowej
 
 | Opcja | Domyślnie | Co robi |
 |---|---|---|
@@ -111,7 +131,7 @@ Jeśli chcesz mieć jeden plik `.exe`, który działa bez Pythona:
 
 ```
 py -m pip install pyinstaller psutil
-py -m PyInstaller --onefile autostop.py
+py -m PyInstaller --onefile --windowed autostop_gui.py
 ```
 
 Gotowy plik pojawi się w folderze `dist`.

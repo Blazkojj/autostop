@@ -156,6 +156,15 @@ class RateMeterTest(unittest.TestCase):
         self.assertEqual(meter.rate(10.0), 200.0)
         self.assertEqual(meter.rate(20.0), 0.1)
 
+    def test_rate_averaged_over_window(self):
+        samples = iter([{1: 0}, {1: 1000}, {1: 1000}, {1: 1000}, {1: 1000}])
+        meter = autostop.RateMeter(lambda: next(samples), window=2)
+        self.assertIsNone(meter.rate(0.0))
+        self.assertEqual(meter.rate(1.0), 1000.0)
+        self.assertEqual(meter.rate(2.0), 500.0)   # średnia z 2 sekund
+        self.assertEqual(meter.rate(3.0), 0.0)     # skok wypadł z okna
+        self.assertEqual(meter.rate(4.0), 0.0)
+
 
 class DeciderTest(unittest.TestCase):
     def make(self):

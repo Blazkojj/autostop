@@ -25,7 +25,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -381,24 +383,31 @@ def running_launchers(extra: set[str]) -> list[str]:
 
 
 class RateMeter:
-    """Liczy prędkość (bajty/s) na podstawie kolejnych odczytów liczników."""
+    """Liczy prędkość (bajty/s) na podstawie kolejnych odczytów liczników,
+    uśrednioną z ostatnich `window` sekund."""
 
-    def __init__(self, sampler):
+    def __init__(self, sampler, window: float = 0.0):
         self._sampler = sampler
-        self._previous: tuple[float, dict[int, int]] | None = None
+        self._window = window
+        self._counters: dict[int, int] | None = None
+        self._total = 0
+        self._history: deque[tuple[float, int]] = deque()
 
     def rate(self, now: float) -> float | None:
         current = self._sampler()
-        previous, self._previous = self._previous, (now, current)
-        if previous is None:
+        if self._counters is not None:
+            # Liczymy tylko procesy widziane w obu odczytach; licznik mniejszy niż
+            # poprzednio oznacza nowy proces o tym samym PID.
+            self._total += sum(max(0, value - self._counters[pid])
+                               for pid, value in current.items() if pid in self._counters)
+        self._counters = current
+        self._history.append((now, self._total))
+        while len(self._history) > 2 and self._history[1][0] <= now - self._window:
+            self._history.popleft()
+        if len(self._history) < 2:
             return None
-        then, before = previous
-        # Liczymy tylko procesy widziane w obu odczytach; licznik mniejszy niż
-        # poprzednio oznacza nowy proces o tym samym PID.
-        delta = sum(max(0, value - before[pid])
-                    for pid, value in current.items() if pid in before)
-        elapsed = now - then
-        return delta / elapsed if elapsed > 0 else 0.0
+        (then, before), (_, after) = self._history[0], self._history[-1]
+        return (after - before) / (now - then) if now > then else 0.0
 
 
 # --------------------------------------------------------------------------
@@ -451,6 +460,47 @@ class Decider:
         limit = self.stall if pending else self.idle
         quiet = now - self._last_active
         return Verdict("done" if quiet >= limit else "quiet", quiet, limit)
+
+
+@dataclass
+class Snapshot:
+    speed: float | None         # bajty/s, None przy pierwszym pomiarze
+    games: list[PendingGame]    # gry w kolejce Steam/Epic
+    verdict: Verdict
+
+
+class Monitor:
+    """Łączy pomiar prędkości, kolejkę Steam/Epic i decyzję. Używają go
+    zarówno wersja konsolowa, jak i okienkowa."""
+
+    def __init__(self, idle_minutes: float = 5, stall_minutes: float = 30,
+                 threshold_kb: float = 250, min_download: float = 60,
+                 steam_path: str | None = None, extra_processes: set[str] = frozenset(),
+                 window: float = 0.0):
+        self.extra = set(extra_processes)
+        self.watcher = QueueWatcher(steam_path)
+        self.meter, self.source = make_meter(self.extra, window)
+        self.threshold = threshold_kb * 1024
+        self.min_download = min_download
+        self._lock = threading.Lock()
+        self.generation = 0  # rośnie przy każdym reset()
+        self.reset(idle_minutes, stall_minutes)
+
+    def reset(self, idle_minutes: float, stall_minutes: float) -> None:
+        """Zaczyna obserwację od nowa (np. po zmianie ustawień)."""
+        with self._lock:
+            self.decider = Decider(idle=idle_minutes * 60, stall=stall_minutes * 60,
+                                   min_download=self.min_download)
+            self.generation += 1
+
+    def poll(self) -> Snapshot:
+        now = time.monotonic()
+        speed = self.meter.rate(now)
+        games = self.watcher.pending()
+        active = speed is not None and speed >= self.threshold
+        with self._lock:
+            verdict = self.decider.update(now, active, bool(games))
+        return Snapshot(speed, games, verdict)
 
 
 # --------------------------------------------------------------------------
@@ -589,10 +639,11 @@ def extra_process_names(args: argparse.Namespace) -> set[str]:
     return names
 
 
-def make_meter(extra: set[str]) -> tuple[RateMeter, str]:
+def make_meter(extra: set[str], window: float = 0.0) -> tuple[RateMeter, str]:
     if hasattr(psutil.Process, "io_counters"):
-        return RateMeter(launcher_io_sampler(extra)), "ruch na dysku launcherów"
-    return RateMeter(network_sampler), "cały ruch sieciowy (ten system nie podaje I/O procesów)"
+        return RateMeter(launcher_io_sampler(extra), window), "ruch na dysku launcherów"
+    return (RateMeter(network_sampler, window),
+            "cały ruch sieciowy (ten system nie podaje I/O procesów)")
 
 
 def print_setup(watcher: QueueWatcher, source: str, args: argparse.Namespace) -> None:
@@ -629,21 +680,14 @@ def show_status(args: argparse.Namespace) -> int:
 
 def watch(args: argparse.Namespace, console: Console) -> bool:
     """Czeka, aż pobieranie się skończy. Zwraca True, gdy trzeba wyłączyć."""
-    extra = extra_process_names(args)
-    watcher = QueueWatcher(args.steam_path)
-    meter, source = make_meter(extra)
-    decider = Decider(idle=args.idle * 60, stall=args.stall * 60,
-                      min_download=args.min_download)
-    threshold = args.threshold * 1024
-    print_setup(watcher, source, args)
+    monitor = Monitor(args.idle, args.stall, args.threshold, args.min_download,
+                      args.steam_path, extra_process_names(args))
+    print_setup(monitor.watcher, monitor.source, args)
 
     last_state = None
     while True:
-        now = time.monotonic()
-        speed = meter.rate(now)
-        games = watcher.pending()
-        active = speed is not None and speed >= threshold
-        verdict = decider.update(now, active, bool(games))
+        snapshot = monitor.poll()
+        speed, games, verdict = snapshot.speed, snapshot.games, snapshot.verdict
 
         if verdict.state != last_state:
             if verdict.state == "quiet" and last_state in (None, "waiting"):

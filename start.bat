@@ -1,7 +1,8 @@
 @echo off
 setlocal
 rem AutoStop - wylacza komputer, gdy gry sie pobiora.
-rem Mozna dopisac opcje, np.:  start.bat --test
+rem Bez opcji otwiera okienko. Z opcjami uruchamia wersje konsolowa,
+rem np.:  start.bat --test
 pushd "%~dp0"
 
 if not exist "autostop.py" (
@@ -39,6 +40,25 @@ if errorlevel 1 (
     echo Instaluje biblioteke psutil...
     "%PYEXE%" %PYARGS% -m pip install psutil
 )
+rem Bez opcji: okienko (bez czarnego okna konsoli). Z opcjami: wersja konsolowa.
+if not "%~1"=="" goto :console
+"%PYEXE%" %PYARGS% -c "import tkinter" >nul 2>nul
+if errorlevel 1 (
+    echo Ten Python nie ma modulu tkinter, wiec uruchamiam wersje konsolowa.
+    echo Okienko zadziala po zaznaczeniu "tcl/tk and IDLE" w instalatorze Pythona.
+    goto :console
+)
+set "PYW=%PYEXE%"
+if /i "%PYEXE%"=="py" set "PYW=pyw"
+if /i "%PYEXE%"=="python" set "PYW=pythonw"
+if /i "%PYEXE%"=="python3" set "PYW=pythonw"
+if exist "%PYEXE%" set "PYW=%PYEXE:python.exe=pythonw.exe%"
+if exist "%PYEXE%" if not exist "%PYW%" set "PYW=%PYEXE%"
+start "" "%PYW%" %PYARGS% autostop_gui.py
+popd
+exit /b
+
+:console
 echo.
 "%PYEXE%" %PYARGS% autostop.py %*
 
